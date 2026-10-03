@@ -227,9 +227,9 @@ export const LEVELS = [
       ), { top: 0x8d9097 });
       b.platform(70, 13.5, 200, 1, 0, { style: 'metal' }); // ceiling beam
       b.sign(6, 0, 'HARD HAT\nAREA');
-      b.wreckingBall(30, 13, 10.5, 1.0, 1.1);
-      b.wreckingBall(50, 13, 10.5, 1.0, -0.9);
-      b.wreckingBall(70, 13, 10.5, 1.1, 1.3);
+      b.wreckingBall(30, 13, 11, 1.0, 1.1);
+      b.wreckingBall(50, 13, 11, 1.0, -0.9);
+      b.wreckingBall(70, 13, 11, 1.1, 1.3);
       b.checkpoint(84, 0);
       b.conveyor(100, 0, 18, -3);
       b.crate(96, 0.2, 1);
@@ -242,7 +242,7 @@ export const LEVELS = [
       b.saw(146, 2.6, 0.9, { path: [146, 0.4], period: 1.7 });
       b.ramp(152, 0, 7, 1.8, 1, { curve: true, style: 'metal' });
       b.spikes(166, -5, 11);
-      b.wreckingBall(186, 13, 10.5, 1.0, 1.2);
+      b.wreckingBall(186, 13, 11, 1.0, 1.2);
       b.npc(196, 0);
       b.npc(199, 0);
       b.barrel(204, 0);
@@ -306,7 +306,7 @@ export const LEVELS = [
   {
     id: 'harpoon-alley',
     name: 'Harpoon Alley',
-    desc: 'Automated harpoon turrets track your every move. Use the walls for cover.',
+    desc: 'Automated harpoon turrets track your every move. Hide under the shelters.',
     theme: 'night',
     difficulty: 4,
     par: 50,

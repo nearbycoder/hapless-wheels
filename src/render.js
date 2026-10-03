@@ -294,7 +294,7 @@ export class Renderer {
     this.camState.z = 16;
   }
 
-  updateCamera(dt, tx, ty, vx, vy, zoomBias = 0) {
+  updateCamera(dt, tx, ty, vx, vy, zoomBias = this.zoomBias || 0) {
     const cs = this.camState;
     const speed = Math.hypot(vx, vy);
     const lookX = tx + clamp(vx * 0.35, -6, 6);
