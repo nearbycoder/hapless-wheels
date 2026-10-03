@@ -67,11 +67,31 @@ export class Game {
     this.player = new PlayerCharacter(this, def, start[0], start[1] + 0.05);
     this.killY = level.killY ?? b.minY - 30;
     this.renderer.buildBackdrop(level.theme, b.minX, b.maxX, (x) => b.groundAt(x));
+    this.buildStaticMirror();
     this.hookWorld();
     const f = this.player.focus.getPosition();
     this.renderer.snapCamera(f.x, f.y);
+    this.renderer.updateCamera(0, f.x, f.y, 0, 0);
+    this.renderer.warmup(this.effects);
     this.state = 'playing';
     this.ui.onLevelStart(this);
+  }
+
+  // Blood droplets only ever stick to static scenery, so they raycast against a
+  // lightweight copy of the static geometry instead of the full physics world.
+  buildStaticMirror() {
+    const sw = new planck.World({ gravity: V(0, 0) });
+    for (let b = this.world.getBodyList(); b; b = b.getNext()) {
+      if (!b.isStatic()) continue;
+      let mirror = null;
+      for (let f = b.getFixtureList(); f; f = f.getNext()) {
+        const ud = f.getUserData();
+        if (f.isSensor() || (ud && (ud.type === 'glass' || ud.type === 'mine'))) continue;
+        if (!mirror) mirror = sw.createBody({ type: 'static', position: b.getPosition(), angle: b.getAngle() });
+        mirror.createFixture({ shape: f.getShape() });
+      }
+    }
+    this.staticWorld = sw;
   }
 
   teardown() {
@@ -186,12 +206,15 @@ export class Game {
         this.timeScale = this.slowmo > 0 ? 0.35 : 1;
       }
       this.acc += Math.min(frameDt, 0.1) * this.timeScale;
+      // At most 4 substeps per frame; if we fall further behind, drop the
+      // backlog (brief slow-down) rather than spiral into ever-longer frames.
       let steps = 0;
-      while (this.acc >= DT && steps < 10) {
+      while (this.acc >= DT && steps < 4) {
         this.step(DT, this.state === 'playing' ? input : EMPTY_INPUT);
         this.acc -= DT;
         steps++;
       }
+      if (this.acc > DT) this.acc = DT * 0.5;
       this.effects.update(frameDt * this.timeScale);
       for (const fn of this.frameUpdaters) fn(frameDt * this.timeScale);
       if (this.deathTimer > 0) {

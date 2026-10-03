@@ -275,6 +275,37 @@ export class Renderer {
     this.animators.push(fn);
   }
 
+  // Compile every shader the level can need up front (including hidden meshes
+  // such as rocket flames and the effect pools) so nothing compiles mid-run.
+  warmup(effects) {
+    const hidden = [];
+    this.scene.traverse((o) => {
+      if (!o.visible) { hidden.push(o); o.visible = true; }
+    });
+    const pools = effects ? [effects.blood.mesh, effects.glow.mesh, effects.smoke.mesh, effects.decals] : [];
+    const counts = pools.map((m) => m.count);
+    for (const m of pools) m.count = Math.max(1, m.count);
+    const warm = new THREE.Group();
+    warm.position.set(0, -9999, 0);
+    if (effects) {
+      warm.add(new THREE.Mesh(effects.shardGeos[0].geo, this.mat(0xaee4ff, { transparent: true, opacity: 0.5, roughness: 0.05, metalness: 0.3 })));
+      warm.add(new THREE.Mesh(effects.gibGeo, this.mat(0x8a0b0b)));
+    }
+    this.scene.add(warm);
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      // one offscreen render so shadow-map programs get built too
+      this.warmTarget ||= new THREE.WebGLRenderTarget(64, 64);
+      this.renderer.setRenderTarget(this.warmTarget);
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.setRenderTarget(null);
+    } finally {
+      this.scene.remove(warm);
+      pools.forEach((m, i) => { m.count = counts[i]; });
+      for (const o of hidden) o.visible = false;
+    }
+  }
+
   sync() {
     for (const { body, obj } of this.bindings) {
       const p = body.getPosition();

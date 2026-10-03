@@ -8,6 +8,13 @@ const _p = new THREE.Vector3();
 const _c = new THREE.Color();
 const _zAxis = new THREE.Vector3(0, 0, 1);
 const _n = new THREE.Vector3();
+const _p1 = V(0, 0), _p2 = V(0, 0);
+let hit = null;
+const onRay = (f, p, n, frac) => {
+  if (f.isSensor()) return -1;
+  hit = { x: p.x, y: p.y, nx: n.x, ny: n.y };
+  return frac;
+};
 
 class Pool {
   constructor(scene, geo, mat, max) {
@@ -57,7 +64,26 @@ export class Effects {
 
     this.emitters = [];
     this.debris = [];
+    // Explosion flashes reuse a fixed pool of lights. Adding/removing lights
+    // changes the light count, which makes three.js recompile every shader.
     this.lights = [];
+    for (let i = 0; i < 2; i++) {
+      const light = new THREE.PointLight(0xffaa44, 0, 18, 1.5);
+      light.position.set(0, -9999, 0);
+      scene.add(light);
+      this.lights.push({ light, t: 0, dur: 0, intensity: 0 });
+    }
+    // Shared geometry for debris (avoids creating geometry per gib/shard)
+    this.gibGeo = new THREE.BoxGeometry(1, 1, 1);
+    this.gibGeo.userData.shared = true;
+    this.shardGeos = [];
+    for (let i = 0; i < 6; i++) {
+      const pts = [[0, 0], [rand(0.6, 1.4), rand(-0.3, 0.3)], [rand(-0.4, 0.4), rand(0.6, 1.4)]];
+      const sh = new THREE.Shape(pts.map(([a, b]) => new THREE.Vector2(a, b)));
+      const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.16, bevelEnabled: false });
+      geo.userData.shared = true;
+      this.shardGeos.push({ geo, pts });
+    }
   }
 
   reset() {
@@ -70,8 +96,10 @@ export class Effects {
     this.decalCount = 0;
     this.emitters.length = 0;
     this.debris.length = 0;
-    for (const l of this.lights) this.scene.remove(l.light);
-    this.lights.length = 0;
+    for (const l of this.lights) {
+      l.light.intensity = 0;
+      l.t = l.dur = 0;
+    }
   }
 
   // ---------------- blood ----------------
@@ -79,7 +107,7 @@ export class Effects {
     count = Math.round(count * this.goreLevel);
     const items = this.blood.items;
     for (let i = 0; i < count; i++) {
-      if (items.length >= this.blood.max) items.shift();
+      if (items.length >= this.blood.max) break;
       const a = Math.random() * Math.PI * 2;
       const sp = Math.random() * spread;
       items.push({
@@ -119,13 +147,13 @@ export class Effects {
   // ---------------- glow / smoke ----------------
   spark(x, y, vx, vy, color, life, size, opts = {}) {
     const items = this.glow.items;
-    if (items.length >= this.glow.max) items.shift();
+    if (items.length >= this.glow.max) return;
     items.push({ x, y, z: opts.z ?? rand(-0.3, 0.3), vx, vy, vz: opts.vz ?? 0, life, maxLife: life, size, color, grav: opts.grav ?? 0, drag: opts.drag ?? 1.5 });
   }
 
   puff(x, y, vx, vy, color, life, size, opts = {}) {
     const items = this.smoke.items;
-    if (items.length >= this.smoke.max) items.shift();
+    if (items.length >= this.smoke.max) return;
     items.push({ x, y, z: opts.z ?? rand(-0.5, 0.5), vx, vy, vz: 0, life, maxLife: life, size, color, grav: opts.grav ?? 0.6, drag: opts.drag ?? 1.2, grow: opts.grow ?? 1.8 });
   }
 
@@ -144,10 +172,16 @@ export class Effects {
   }
 
   flash(x, y, color = 0xffaa44, intensity = 60, dist = 18, dur = 0.35) {
-    const light = new THREE.PointLight(color, intensity, dist, 1.5);
-    light.position.set(x, y, 2);
-    this.scene.add(light);
-    this.lights.push({ light, t: 0, dur, intensity });
+    // reuse whichever pooled light has the least time left
+    let l = this.lights[0];
+    for (const c of this.lights) if (c.dur - c.t < l.dur - l.t) l = c;
+    l.light.color.set(color);
+    l.light.distance = dist;
+    l.light.position.set(x, y, 2);
+    l.light.intensity = intensity;
+    l.intensity = intensity;
+    l.t = 0;
+    l.dur = dur;
   }
 
   // ---------------- explosion ----------------
@@ -228,7 +262,9 @@ export class Effects {
       body.setLinearVelocity(V(vx + rand(-6, 6), vy + rand(0, 8)));
       body.setAngularVelocity(rand(-20, 20));
       const col = colors[i % colors.length];
-      const mesh = r.box(s * 2, s * 2, s * 2, col);
+      const mesh = new THREE.Mesh(this.gibGeo, r.mat(col));
+      mesh.scale.set(s * 2, s * 2, s * 2);
+      mesh.castShadow = true;
       const g = new THREE.Group();
       g.add(mesh);
       g.position.z = rand(-0.4, 0.4);
@@ -243,18 +279,17 @@ export class Effects {
     for (let i = 0; i < n; i++) {
       const px = x + rand(-w / 2, w / 2), py = y + rand(-h / 2, h / 2);
       const s = rand(0.08, 0.25);
-      const pts = [[0, 0], [s * rand(0.6, 1.4), rand(-s, s) * 0.3], [rand(-s, s) * 0.4, s * rand(0.6, 1.4)]];
+      const proto = this.shardGeos[i % this.shardGeos.length];
       const body = this.game.world.createBody({ type: 'dynamic', position: V(px, py), angle: rand(0, 6) });
       try {
-        body.createFixture({ shape: new planck.Polygon(pts.map(([a, b]) => V(a, b))), density: 1, friction: 0.4, restitution: 0.3, filterCategoryBits: CAT.DEBRIS, filterMaskBits: MASK.DEBRIS });
+        body.createFixture({ shape: new planck.Polygon(proto.pts.map(([a, b]) => V(a * s, b * s))), density: 1, friction: 0.4, restitution: 0.3, filterCategoryBits: CAT.DEBRIS, filterMaskBits: MASK.DEBRIS });
       } catch (e) {
         body.createFixture({ shape: new planck.Box(s / 2, s / 2), density: 1, filterCategoryBits: CAT.DEBRIS, filterMaskBits: MASK.DEBRIS });
       }
       body.setLinearVelocity(V(vx * rand(0.3, 1) + rand(-3, 3), vy * rand(0.3, 1) + rand(-1, 4)));
       body.setAngularVelocity(rand(-15, 15));
-      const shape = new THREE.Shape(pts.map(([a, b]) => new THREE.Vector2(a, b)));
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: false });
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new THREE.Mesh(proto.geo, mat);
+      mesh.scale.set(s, s, 0.25);
       const g = new THREE.Group();
       g.add(mesh);
       g.position.z = rand(-0.5, 0.5);
@@ -289,6 +324,7 @@ export class Effects {
     }
 
     // blood droplets
+    const sw = this.game.staticWorld || world;
     const items = this.blood.items;
     const g = -14;
     let w = 0;
@@ -298,16 +334,11 @@ export class Effects {
       if (b.life <= 0) continue;
       b.vy += g * dt;
       const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt;
-      let hit = null;
-      world.rayCast(V(b.x, b.y), V(nx, ny), (f, p, n, frac) => {
-        if (f.isSensor()) return -1;
-        const cat = f.getFilterCategoryBits();
-        if (cat & (CAT.CHAR | CAT.DEBRIS | CAT.PROJECTILE)) return -1;
-        hit = { x: p.x, y: p.y, nx: n.x, ny: n.y, f };
-        return frac;
-      });
+      hit = null;
+      _p1.x = b.x; _p1.y = b.y; _p2.x = nx; _p2.y = ny;
+      sw.rayCast(_p1, _p2, onRay);
       if (hit) {
-        if (hit.f.getBody().isStatic() && Math.random() < 0.85) {
+        if (Math.random() < 0.85) {
           this.addDecal(hit.x, hit.y, clamp(b.z, -0.9, 0.95), hit.nx, hit.ny, b.size * rand(1.6, 3.2));
         }
         continue;
@@ -346,21 +377,17 @@ export class Effects {
     }
 
     // lights
-    for (let i = this.lights.length - 1; i >= 0; i--) {
-      const l = this.lights[i];
+    for (const l of this.lights) {
+      if (l.t >= l.dur) continue;
       l.t += dt;
-      l.light.intensity = l.intensity * Math.max(0, 1 - l.t / l.dur);
-      if (l.t >= l.dur) {
-        this.scene.remove(l.light);
-        this.lights.splice(i, 1);
-      }
+      l.light.intensity = l.t >= l.dur ? 0 : l.intensity * (1 - l.t / l.dur);
     }
   }
 
   bleedOne(x, y, vx, vy) {
     if (this.goreLevel <= 0) return;
     const items = this.blood.items;
-    if (items.length >= this.blood.max) items.shift();
+    if (items.length >= this.blood.max) return;
     items.push({ x, y, z: rand(-0.3, 0.35), vx, vy, vz: rand(-0.3, 0.3), life: 4, size: rand(0.025, 0.05), shade: rand(0.6, 1) });
   }
 
