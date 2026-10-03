@@ -112,6 +112,8 @@ kbd {
   border-radius: 16px;
   padding: 26px 30px;
   width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -422,4 +424,26 @@ select {
   .win-stats { grid-template-columns: repeat(2, auto); }
   .hud-time { font-size: 32px; }
   .hud-bottom .hud-hint { display: none; }
+}
+
+/* ---------------------------------------------------------------- controller */
+.k-pad, .k-pad-text { display: none; }
+body.pad .k-key, body.pad .k-key-text { display: none; }
+body.pad .k-pad { display: inline-block; }
+body.pad .k-pad-text { display: inline; }
+.pad-focus {
+  outline: 4px solid #fff !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px rgba(255, 210, 58, 0.55), 0 5px 0 var(--ink) !important;
+  transform: translateY(-2px);
+}
+.char.pad-focus, .level.pad-focus { border-color: var(--yellow); }
+select.pad-focus { outline-offset: 2px; }
+.panel h3.sub {
+  font-family: 'Bangers', Impact, sans-serif;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  font-size: 24px;
+  color: var(--yellow);
+  margin: 6px 0 0;
 }

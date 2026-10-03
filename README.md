@@ -28,7 +28,7 @@ Pick a hapless rider, guide their vehicle through 14 obstacle-course levels and 
 - **Interactive hazards and props**: mines and barrels that set each other off, harpoon turrets that track you, breakable glass, rope bridges that snap, seesaws, elevators, conveyors, trampolines, boost pads, and bystanders you can bowl over.
 - **Checkpoints, best times and medals** (gold, silver or bronze against each level's par time).
 - **No asset files.** Textures are drawn on canvas and every sound, screams included, is synthesized with the Web Audio API.
-- **Works on touch devices** with on-screen controls.
+- **Plays with a keyboard, a game controller or touch**, including controller rumble on crashes and full menu navigation with the d-pad.
 
 ## Screenshots
 
@@ -99,6 +99,24 @@ npm run preview    # serves dist/ locally
 
 After ejecting you're a ragdoll. The arrow keys flail your arms and legs, and Space curls you into a ball.
 
+### Controller
+
+Plug in or pair any controller the browser recognizes (Xbox, PlayStation, Switch Pro and most generic pads), then press a button to wake it. Once you use it, the on-screen button prompts switch to controller buttons.
+
+| Button | In game | In menus |
+| --- | --- | --- |
+| RT / left stick up / D-pad up | Accelerate | Move up |
+| LT / left stick down / D-pad down | Reverse | Move down |
+| Left stick / D-pad left and right | Lean back / forward | Move left / right, change a setting |
+| A (Cross) or RB | Primary ability | Select |
+| X (Square) or LB | Secondary ability | |
+| Y (Triangle) | Eject | |
+| B (Circle) | | Back |
+| Start | Pause / resume | Open level select from the title screen |
+| Back / Select | Restart level | |
+
+After a crash, **A** retries from the last checkpoint, **X** or **Back** restarts the level, and **B** returns to level select. Crashes and explosions make the controller rumble if it supports vibration.
+
 ### Characters
 
 | Rider | Vehicle | Space | Shift | Notes |
@@ -150,7 +168,8 @@ Open **Settings** from the title screen or the pause menu:
 | `src/render.js` | three.js scene, follow camera, themed skies and parallax scenery. |
 | `src/effects.js` | Blood droplets that leave stains, sparks, smoke, explosions, glass shards and gibs. |
 | `src/audio.js` | All sound effects, synthesized with Web Audio. |
-| `src/ui.js` | Menus, HUD, overlays and touch controls. |
+| `src/ui.js` | Menus, HUD, overlays, touch controls and controller menu navigation. |
+| `src/gamepad.js` | Gamepad API polling, button mapping and rumble. |
 
 ### Dev helpers
 

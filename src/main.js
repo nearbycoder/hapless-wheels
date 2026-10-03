@@ -4,6 +4,7 @@ import { Game } from './game.js';
 import { UI } from './ui.js';
 import { LEVELS } from './levels.js';
 import { CHARACTERS } from './characters.js';
+import { Gamepads } from './gamepad.js';
 
 const KEYMAP = {
   ArrowUp: 'up', KeyW: 'up',
@@ -21,10 +22,11 @@ class Input {
   constructor() {
     this.keys = {};
     this.touch = {};
+    this.pad = {};
   }
   get state() {
     const s = {};
-    for (const k of ['up', 'down', 'left', 'right', 'primary', 'secondary']) s[k] = !!(this.keys[k] || this.touch[k]);
+    for (const k of ['up', 'down', 'left', 'right', 'primary', 'secondary']) s[k] = !!(this.keys[k] || this.touch[k] || this.pad[k]);
     return s;
   }
   reset() {
@@ -41,6 +43,15 @@ class App {
     this.ui = new UI(document.getElementById('ui'), this);
     this.game = new Game(this.renderer, NULL_AUDIO, NULL_UI);
     this.levelIndex = 0;
+    this.pads = new Gamepads();
+    this.pads.onConnect = (gp, on) => {
+      this.ui.setPadMode(on || this.pads.connected);
+      this.ui.toast(on ? 'Controller connected' : 'Controller disconnected');
+      if (on) this.pads.rumble(0.3, 0.3, 120);
+    };
+    this.renderer.onShake = (amt) => {
+      if (!this.demo) this.pads.rumble(Math.min(1, amt * 1.2), Math.min(1, amt), 120 + amt * 250);
+    };
     this.applySettings();
     this.bindKeys();
     this.startDemo();
@@ -175,10 +186,48 @@ class App {
     };
   }
 
+  // Controller buttons that act on the game flow / menus (driving is handled
+  // through Input.pad which is merged into the normal input state).
+  handlePad(p) {
+    const P = p.pressed;
+    if (p.anyInput && !this.ui.padMode) this.ui.setPadMode(true);
+    if (Object.keys(P).length) this.audio.init();
+    const g = this.game;
+    const nav = () => {
+      for (const d of ['up', 'down', 'left', 'right']) if (P[d]) this.ui.navigate(d);
+      if (P.a) this.ui.activate();
+    };
+    if (this.demo) {
+      nav();
+      if (P.start && this.ui.screen === 'title') this.ui.showLevelSelect();
+      if (P.b) this.ui.back();
+      return;
+    }
+    if (g.state === 'playing') {
+      if (P.y) this.eject();
+      if (P.start) this.togglePause();
+      if (P.back) this.restart(false);
+    } else if (g.state === 'paused') {
+      nav();
+      if (P.start || P.b) this.togglePause();
+    } else if (g.state === 'dead') {
+      if (P.a) this.restart(true);
+      if (P.back || P.x) this.restart(false);
+      if (P.b) this.toMenu();
+    } else if (g.state === 'won') {
+      if (P.a) this.nextLevel();
+      if (P.back || P.x) this.restart(false);
+      if (P.b) this.toMenu();
+    }
+  }
+
   frame(now) {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     const g = this.game;
+    this.pads.poll(now);
+    this.input.pad = this.pads.held;
+    this.handlePad(this.pads);
     if (this.demo) {
       g.update(dt, this.demoInput());
       if (g.state !== 'playing') {

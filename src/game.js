@@ -495,6 +495,7 @@ export class Game {
         this.deathTimer = 1.1;
         this.slowmo = 0.7;
         this.audio.play('die', 1);
+        this.renderer.shake(0.35);
         this.ui.onDeath(this);
       }
     } else if (this.player && rd === this.player.kid) {

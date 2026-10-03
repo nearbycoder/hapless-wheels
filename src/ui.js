@@ -34,6 +34,9 @@ function medalFor(level, time) {
   return 'bronze';
 }
 
+// Shows the keyboard key normally, and the controller button once a pad is in use.
+const kb = (key, pad) => `<kbd class="k-key">${key}</kbd><kbd class="k-pad">${pad}</kbd>`;
+
 const ICONS = {
   wheelchair: '♿', gyro: '⚡', bike: '🚲', cart: '🛒', moped: '🛵',
 };
@@ -75,7 +78,7 @@ export class UI {
         <button class="btn" data-a="how">HOW TO PLAY</button>
         <button class="btn" data-a="settings">SETTINGS</button>
       </div>
-      <div class="foot">Arrow keys / WASD · Space · Shift · Z to eject · Enter to retry</div>
+      <div class="foot"><span class="k-key-text">Arrow keys / WASD · Space · Shift · Z to eject · Enter to retry</span><span class="k-pad-text">🎮 Controller ready · D-pad to choose · A to select</span></div>
     `;
     s.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -88,6 +91,7 @@ export class UI {
     });
     this.root.appendChild(s);
     this.screen = 'title';
+    this.autoFocus('[data-a=play]');
   }
 
   showHowTo() {
@@ -107,12 +111,23 @@ export class UI {
           <div><kbd>Esc</kbd> / <kbd>P</kbd></div><div>Pause</div>
           <div><kbd>M</kbd></div><div>Mute</div>
         </div>
+        <h3 class="sub">Controller</h3>
+        <div class="how-grid">
+          <div><kbd>RT</kbd> / <kbd>LT</kbd> or left stick ↑ ↓</div><div>Accelerate / reverse</div>
+          <div>Left stick ← → or D-pad</div><div>Lean back / forward</div>
+          <div><kbd>A</kbd> or <kbd>RB</kbd></div><div>Primary ability</div>
+          <div><kbd>X</kbd> or <kbd>LB</kbd></div><div>Secondary ability</div>
+          <div><kbd>Y</kbd></div><div>Eject</div>
+          <div><kbd>Start</kbd> / <kbd>Back</kbd></div><div>Pause / restart level</div>
+          <div><kbd>A</kbd> / <kbd>B</kbd> after a crash</div><div>Retry from checkpoint / back to levels</div>
+        </div>
         <p class="note">Reach the golden star to finish a level. Lose limbs, keep going.
         Lose your head... well. After ejecting you can still flail your arms and legs with the arrow keys.</p>
         <button class="btn" data-a="back">BACK</button>
       </div>`;
     s.querySelector('[data-a=back]').onclick = () => this.showTitle();
     this.root.appendChild(s);
+    this.autoFocus('[data-a=back]');
   }
 
   showSettings(back) {
@@ -155,6 +170,7 @@ export class UI {
     };
     s.querySelector('[data-a=back]').onclick = back;
     this.root.appendChild(s);
+    this.autoFocus('select');
   }
 
   // ---------------------------------------------------------------- level select
@@ -204,6 +220,7 @@ export class UI {
       const c = e.target.closest('[data-char]');
       if (c) {
         this.charId = c.dataset.char;
+        this.pendingFocus = `[data-char="${this.charId}"]`;
         store.set('hw_char', this.charId);
         this.app.audio.play('click');
         const y = s.scrollTop;
@@ -222,6 +239,8 @@ export class UI {
     });
     this.root.appendChild(s);
     this.screen = 'select';
+    this.autoFocus(this.pendingFocus || '.level');
+    this.pendingFocus = null;
   }
 
   // ---------------------------------------------------------------- HUD
@@ -261,10 +280,95 @@ export class UI {
     this.hideOverlay();
     const idx = LEVELS.indexOf(game.level);
     this.hud.querySelector('.hud-level').textContent = `${idx + 1}. ${game.level.name}`;
-    const d = game.player.def;
-    this.hud.querySelector('.hud-hint').innerHTML = `${d.name} · <kbd>Space</kbd> ${d.primary} · <kbd>Shift</kbd> ${d.secondary} · <kbd>Z</kbd> Eject`;
+    this.updateHint();
     this.updateMuteIcon();
     this.screen = 'game';
+  }
+
+  updateHint() {
+    const game = this.app.game;
+    if (!game || !game.player) return;
+    const d = game.player.def;
+    this.hud.querySelector('.hud-hint').innerHTML = this.padMode
+      ? `${d.name} · <kbd>RT</kbd> Drive · <kbd>A</kbd> ${d.primary} · <kbd>X</kbd> ${d.secondary} · <kbd>Y</kbd> Eject`
+      : `${d.name} · <kbd>Space</kbd> ${d.primary} · <kbd>Shift</kbd> ${d.secondary} · <kbd>Z</kbd> Eject`;
+  }
+
+  // ---------------------------------------------------------------- controller navigation
+  setPadMode(on) {
+    if (this.padMode === on) return;
+    this.padMode = on;
+    document.body.classList.toggle('pad', on);
+    if (this.screen === 'game') this.updateHint();
+    if (!on) this.setFocus(null);
+  }
+
+  focusables() {
+    return [...this.root.querySelectorAll('button, select')].filter(
+      (el) => el.offsetParent !== null && !el.closest('.touch') && !el.closest('.hud-right'),
+    );
+  }
+
+  setFocus(el) {
+    if (this.padFocus) this.padFocus.classList.remove('pad-focus');
+    this.padFocus = el;
+    if (!el) return;
+    el.classList.add('pad-focus');
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }
+
+  autoFocus(selector) {
+    if (!this.padMode) return;
+    requestAnimationFrame(() => {
+      const el = selector && this.root.querySelector(selector);
+      this.setFocus(el && el.offsetParent !== null ? el : this.focusables()[0] || null);
+    });
+  }
+
+  navigate(dir) {
+    const list = this.focusables();
+    if (!list.length) return;
+    const cur = this.padFocus && list.includes(this.padFocus) ? this.padFocus : null;
+    if (!cur) { this.setFocus(list.find((e) => e.classList.contains('level')) || list[0]); return; }
+    if (cur.tagName === 'SELECT' && (dir === 'left' || dir === 'right')) {
+      const n = cur.options.length;
+      cur.selectedIndex = (cur.selectedIndex + (dir === 'right' ? 1 : n - 1)) % n;
+      cur.dispatchEvent(new Event('change', { bubbles: true }));
+      this.app.audio.play('click');
+      return;
+    }
+    const r0 = cur.getBoundingClientRect();
+    const cx = r0.left + r0.width / 2, cy = r0.top + r0.height / 2;
+    let best = null, bestScore = Infinity;
+    for (const el of list) {
+      if (el === cur) continue;
+      const r = el.getBoundingClientRect();
+      const dx = r.left + r.width / 2 - cx, dy = r.top + r.height / 2 - cy;
+      const along = dir === 'right' ? dx : dir === 'left' ? -dx : dir === 'down' ? dy : -dy;
+      if (along <= 4) continue;
+      const across = dir === 'left' || dir === 'right' ? Math.abs(dy) : Math.abs(dx);
+      const score = along + across * 2.5;
+      if (score < bestScore) { bestScore = score; best = el; }
+    }
+    if (best) {
+      this.setFocus(best);
+      this.app.audio.play('click');
+    }
+  }
+
+  activate() {
+    const list = this.focusables();
+    const cur = this.padFocus && list.includes(this.padFocus) ? this.padFocus : null;
+    if (!cur) { this.navigate('down'); return; }
+    if (cur.tagName === 'SELECT') { this.navigate('right'); return; }
+    cur.click();
+  }
+
+  back() {
+    const b = [...this.root.querySelectorAll('[data-a=back]')].find((el) => el.offsetParent !== null);
+    if (b) b.click();
+    else if (this.screen === 'select') this.showTitle();
   }
 
   updateMuteIcon() {
@@ -309,10 +413,11 @@ export class UI {
       <div class="dead-title">YOU DIED</div>
       <div class="dead-reason">${reason || ''}</div>
       <div class="ov-buttons">
-        <button class="btn" data-a="retry">${hasCp ? 'CHECKPOINT' : 'RETRY'} <kbd>Enter</kbd></button>
-        ${hasCp ? '<button class="btn" data-a="restart">RESTART <kbd>R</kbd></button>' : ''}
-        <button class="btn" data-a="menu">LEVELS <kbd>Esc</kbd></button>
+        <button class="btn" data-a="retry">${hasCp ? 'CHECKPOINT' : 'RETRY'} ${kb('Enter', 'A')}</button>
+        ${hasCp ? `<button class="btn" data-a="restart">RESTART ${kb('R', 'X')}</button>` : ''}
+        <button class="btn" data-a="menu">LEVELS ${kb('Esc', 'B')}</button>
       </div>`, 'death');
+    this.autoFocus('.overlay [data-a=retry]');
     o.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'retry') this.app.restart(true);
@@ -347,10 +452,11 @@ export class UI {
         </div>
         <div class="medal-big ${medal}"></div>
         <div class="ov-buttons">
-          ${hasNext ? '<button class="btn big" data-a="next">NEXT LEVEL <kbd>Enter</kbd></button>' : '<div class="final">You beat every level! 🏆</div>'}
-          <button class="btn" data-a="replay">REPLAY <kbd>R</kbd></button>
-          <button class="btn" data-a="menu">LEVELS <kbd>Esc</kbd></button>
+          ${hasNext ? `<button class="btn big" data-a="next">NEXT LEVEL ${kb('Enter', 'A')}</button>` : '<div class="final">You beat every level! 🏆</div>'}
+          <button class="btn" data-a="replay">REPLAY ${kb('R', 'X')}</button>
+          <button class="btn" data-a="menu">LEVELS ${kb('Esc', 'B')}</button>
         </div>`, 'win');
+      this.autoFocus('.overlay [data-a=next]');
       o.addEventListener('click', (e) => {
         const a = e.target.closest('[data-a]')?.dataset.a;
         if (a === 'next') this.app.nextLevel();
@@ -369,6 +475,7 @@ export class UI {
         <button class="btn" data-a="settings">SETTINGS</button>
         <button class="btn" data-a="menu">LEVEL SELECT</button>
       </div>`, 'pause');
+    this.autoFocus('.overlay [data-a=resume]');
     o.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'resume') this.app.togglePause();
@@ -395,6 +502,7 @@ export class UI {
       this.app.applySettings();
     });
     o.querySelector('[data-a=back]').onclick = () => this.showPause();
+    this.autoFocus('.overlay select');
   }
 
   // ---------------------------------------------------------------- touch

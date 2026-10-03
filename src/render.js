@@ -285,6 +285,7 @@ export class Renderer {
   }
 
   shake(amount) {
+    this.onShake?.(amount);
     this.camState.shake = Math.min(1.5, this.camState.shake + amount);
   }
 
